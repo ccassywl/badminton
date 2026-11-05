@@ -142,6 +142,28 @@
                     </div>
 
                     <template v-else>
+                        <!-- Team Management Section -->
+                        <section class="bg-white rounded-xl shadow-sm p-6 border-t-4 border-emerald-500">
+                            <h2 class="text-xl font-bold mb-4 flex items-center justify-between">
+                                <span class="flex items-center gap-2">🛡️ 參賽隊伍管理 (Manage Teams)</span>
+                                <span class="text-xs text-gray-500 font-normal">點擊隊伍名稱即可編輯（自動同步至 Google Sheet）</span>
+                            </h2>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                                <div v-for="team in teams" :key="team.id" class="flex items-center justify-between border rounded-lg p-2 bg-gray-50 hover:bg-white transition">
+                                    <input v-model="team.name" @blur="saveTeamsToGoogleSheet" class="bg-transparent font-bold text-gray-800 focus:outline-none focus:bg-white focus:ring-2 focus:ring-green-400 rounded px-2 py-1 flex-1 mr-2" placeholder="輸入隊伍名稱">
+                                    <button @click="removeTeam(team.id)" :disabled="teams.length <= 2" class="text-red-400 hover:text-red-600 p-1 rounded disabled:opacity-30" title="刪除隊伍">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <input v-model="newTeamName" @keyup.enter="addNewTeam" placeholder="新增隊伍名稱..." class="border rounded-md px-3 py-2 text-sm flex-1 focus:ring-2 focus:ring-green-500 outline-none">
+                                <button @click="addNewTeam" class="bg-emerald-600 text-white px-4 py-2 rounded-md font-bold text-sm hover:bg-emerald-700 transition">
+                                    + 新增隊伍
+                                </button>
+                            </div>
+                        </section>
+
                         <section class="bg-white rounded-xl shadow-sm p-6 border-t-4 border-green-500">
                             <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
                                 ➕ 新增對局賽程 (Create Fixture)
@@ -342,58 +364,207 @@
                     { id: 5, name: '巨狼隊 (Wolves)' }
                 ]);
 
-                // Fixture State Management
-                const fixtures = ref([
-                    {
-                        id: 101,
-                        team1Id: 1,
-                        team2Id: 2,
-                        status: 'completed',
-                        t1Score: 2,
-                        t2Score: 1,
-                        matches: [
-                            { type: '單打 (Single)', t1Score: 15, t2Score: 12, winner: 't1', sets: [{t1:15, t2:12}] },
-                            { type: '雙打 (Double)', t1Score: 13, t2Score: 15, winner: 't2', sets: [{t1:13, t2:15}] },
-                            { type: '單打 (Single)', t1Score: 16, t2Score: 14, winner: 't1', sets: [{t1:16, t2:14}] }
-                        ]
-                    }
-                ]);
+                // Google Sheet API Target URL
+                const GOOGLE_APP_URL = "https://script.google.com/macros/s/AKfycbxNbJ8_WFXjUotrruX5Vk7u9SraPqzzTyPOO0nv7vPY0XuJ_xfcnOFi-sXQaMhAJz3Sww/exec";
 
-                // New Fixture Inputs
+                // Google Sheet Syncing Function for Teams
+                const saveTeamsToGoogleSheet = async () => {
+                    try {
+                        if (GOOGLE_APP_URL === "https://script.google.com/macros/s/AKfycbxNbJ8_WFXjUotrruX5Vk7u9SraPqzzTyPOO0nv7vPY0XuJ_xfcnOFi-sXQaMhAJz3Sww/exec") {
+                            console.log("尚未設定 Google Sheet API URL，僅於本地測試環境執行。");
+                            return;
+                        }
+                        await fetch(GOOGLE_APP_URL, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                action: 'updateTeams',
+                                teams: teams.value
+                            })
+                        });
+                        console.log("隊伍資料已成功同步儲存至 Google Sheet!");
+                    } catch (error) {
+                        console.error("隊伍資料同步至 Google Sheet 失敗", error);
+                    }
+                };
+
+                // Team Management Methods
+                const addNewTeam = () => {
+                    if (!newTeamName.value.trim()) return;
+                    teams.value.push({
+                        id: Date.now(),
+                        name: newTeamName.value.trim()
+                    });
+                    newTeamName.value = '';
+                    saveTeamsToGoogleSheet();
+                };
+
+                const removeTeam = (teamId) => {
+                    if (teams.value.length <= 2) {
+                        return;
+                    }
+                    teams.value = teams.value.filter(t => t.id !== teamId);
+                    saveTeamsToGoogleSheet();
+                };
+
+                // Form inputs for creating fixture
+                const newTeamName = ref('');
                 const newFixtureTeam1 = ref(1);
                 const newFixtureTeam2 = ref(2);
 
+                // Fixture State Management
+                const fixtures = ref([]);
+                const activeFixtureId = ref(null);
+                const currentMatchIndex = ref(0);
+
+                // Helper to get team name by ID
+                const getTeamName = (id) => {
+                    const team = teams.value.find(t => t.id === id);
+                    return team ? team.name : '未知隊伍';
+                };
+
+                // Google Sheet Syncing Function for Fixture Results
+                const saveFixtureToGoogleSheet = async (fixtureData) => {
+                    try {
+                        if (GOOGLE_APP_URL === "https://script.google.com/macros/s/AKfycbxNbJ8_WFXjUotrruX5Vk7u9SraPqzzTyPOO0nv7vPY0XuJ_xfcnOFi-sXQaMhAJz3Sww/exec") {
+                            console.log("尚未設定 Google Sheet API URL，僅於本地測試環境執行。");
+                            return;
+                        }
+                        await fetch(GOOGLE_APP_URL, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                action: 'updateFixture',
+                                fixture: fixtureData
+                            })
+                        });
+                        console.log("對局資料已成功同步儲存至 Google Sheet!");
+                    } catch (error) {
+                        console.error("對局資料同步至 Google Sheet 失敗", error);
+                    }
+                };
+
+                // Create a 3-match fixture between 2 teams
                 const createFixture = () => {
                     if (newFixtureTeam1.value === newFixtureTeam2.value) return;
-                    
-                    fixtures.value.push({
+
+                    const newFixture = {
                         id: Date.now(),
                         team1Id: newFixtureTeam1.value,
                         team2Id: newFixtureTeam2.value,
-                        status: 'pending',
                         t1Score: 0,
                         t2Score: 0,
+                        status: 'pending', // pending, completed
                         matches: [
-                            { type: '單打 (Single)', t1Score: 0, t2Score: 0, winner: null, sets: [{t1:0, t2:0}] },
-                            { type: '雙打 (Double)', t1Score: 0, t2Score: 0, winner: null, sets: [{t1:0, t2:0}] },
-                            { type: '單打 (Single)', t1Score: 0, t2Score: 0, winner: null, sets: [{t1:0, t2:0}] }
+                            { type: '單打 (Single 1)', t1Score: 0, t2Score: 0, winner: null },
+                            { type: '雙打 (Double)', t1Score: 0, t2Score: 0, winner: null },
+                            { type: '單打 (Single 2)', t1Score: 0, t2Score: 0, winner: null }
                         ]
-                    });
-                    
-                    alert('對局建立成功！');
+                    };
+
+                    fixtures.value.push(newFixture);
+                    saveFixtureToGoogleSheet(newFixture);
                 };
 
-                // Helper Functions
-                const getTeamName = (id) => {
-                    const t = teams.value.find(team => team.id === id);
-                    return t ? t.name : '未知隊伍';
+                // Computed Fixture Filters
+                const pendingFixtures = computed(() => {
+                    return fixtures.value.filter(f => f.status === 'pending');
+                });
+
+                const completedFixtures = computed(() => {
+                    return fixtures.value.filter(f => f.status === 'completed');
+                });
+
+                // Active Fixture & Match Helpers
+                const activeFixture = computed(() => {
+                    return fixtures.value.find(f => f.id === activeFixtureId.value) || null;
+                });
+
+                const currentActiveMatch = computed(() => {
+                    if (!activeFixture.value) return null;
+                    return activeFixture.value.matches[currentMatchIndex.value];
+                });
+
+                const currentSet = reactive({ t1: 0, t2: 0 });
+
+                // Synchronize dynamic set points when changing match index
+                const updateCurrentSet = () => {
+                    if (currentActiveMatch.value) {
+                        currentSet.t1 = currentActiveMatch.value.t1Score;
+                        currentSet.t2 = currentActiveMatch.value.t2Score;
+                    }
+                };
+
+                const goToUmpire = (fixtureId) => {
+                    activeFixtureId.value = fixtureId;
+                    currentMatchIndex.value = 0;
+                    umpireUnlocked.value = true;
+                    currentTab.value = 'umpire';
+                    updateCurrentSet();
+                };
+
+                // Point scoring logic with deuce rule (Win by 2 points after 14-14)
+                const addPoint = (team) => {
+                    if (team === 't1') currentSet.t1++;
+                    if (team === 't2') currentSet.t2++;
+                };
+
+                const minusPoint = (team) => {
+                    if (team === 't1' && currentSet.t1 > 0) currentSet.t1--;
+                    if (team === 't2' && currentSet.t2 > 0) currentSet.t2--;
+                };
+
+                const setWinner = computed(() => {
+                    const { t1, t2 } = currentSet;
+                    if (t1 >= 15 || t2 >= 15) {
+                        if (Math.abs(t1 - t2) >= 2) {
+                            return t1 > t2 ? 't1' : 't2';
+                        }
+                    }
+                    return null;
+                });
+
+                const confirmEndSet = () => {
+                    if (!setWinner.value || !currentActiveMatch.value) return;
+
+                    currentActiveMatch.value.t1Score = currentSet.t1;
+                    currentActiveMatch.value.t2Score = currentSet.t2;
+                    currentActiveMatch.value.winner = setWinner.value;
+
+                    // Update Overall Score for the Head-to-Head Fixture
+                    let t1Wins = 0;
+                    let t2Wins = 0;
+                    activeFixture.value.matches.forEach(m => {
+                        if (m.winner === 't1') t1Wins++;
+                        if (m.winner === 't2') t2Wins++;
+                    });
+                    activeFixture.value.t1Score = t1Wins;
+                    activeFixture.value.t2Score = t2Wins;
+
+                    saveFixtureToGoogleSheet(activeFixture.value);
+                };
+
+                const nextMatch = () => {
+                    if (currentMatchIndex.value < 2) {
+                        currentMatchIndex.value++;
+                        updateCurrentSet();
+                    }
+                };
+
+                const finishFixture = () => {
+                    if (activeFixture.value) {
+                        activeFixture.value.status = 'completed';
+                        saveFixtureToGoogleSheet(activeFixture.value);
+                        activeFixtureId.value = null;
+                        currentTab.value = 'standings';
+                    }
                 };
 
                 const getMatchWording = (match, fixture) => {
-                    return match.winner === 't1' ? getTeamName(fixture.team1Id) + ' 勝' : getTeamName(fixture.team2Id) + ' 勝';
+                    if (match.winner === 't1') return getTeamName(fixture.team1Id) + ' 勝';
+                    if (match.winner === 't2') return getTeamName(fixture.team2Id) + ' 勝';
+                    return '未完成';
                 };
 
-                // Standings Computation
+                // Standings table computation (Rankings based on total wins)
                 const standings = computed(() => {
                     const stats = teams.value.map(team => ({
                         id: team.id,
@@ -402,172 +573,57 @@
                         played: 0
                     }));
 
-                    fixtures.value.forEach(f => {
-                        if (f.status === 'completed') {
-                            const t1 = stats.find(s => s.id === f.team1Id);
-                            const t2 = stats.find(s => s.id === f.team2Id);
-
-                            if (t1 && t2) {
-                                t1.played++;
-                                t2.played++;
-                                f.matches.forEach(m => {
-                                    if (m.winner === 't1') t1.wins++;
-                                    if (m.winner === 't2') t2.wins++;
-                                });
+                    fixtures.value.forEach(fixture => {
+                        fixture.matches.forEach(m => {
+                            if (m.winner) {
+                                const t1 = stats.find(s => s.id === fixture.team1Id);
+                                const t2 = stats.find(s => s.id === fixture.team2Id);
+                                if (t1) t1.played++;
+                                if (t2) t2.played++;
+                                if (m.winner === 't1' && t1) t1.wins++;
+                                if (m.winner === 't2' && t2) t2.wins++;
                             }
-                        }
+                        });
                     });
 
                     return stats.sort((a, b) => b.wins - a.wins);
                 });
 
-                const completedFixtures = computed(() => fixtures.value.filter(f => f.status === 'completed'));
-                const pendingFixtures = computed(() => fixtures.value.filter(f => f.status === 'pending'));
-
-                // Active Umpire State
-                const activeFixtureId = ref(null);
-                const currentMatchIndex = ref(0);
-
-                const activeFixture = computed(() => fixtures.value.find(f => f.id === activeFixtureId.value));
-                
-                const currentActiveMatch = computed(() => {
-                    if (!activeFixture.value) return null;
-                    return activeFixture.value.matches[currentMatchIndex.value];
-                });
-
-                const currentSet = computed(() => {
-                    if (!currentActiveMatch.value) return null;
-                    return currentActiveMatch.value.sets[0];
-                });
-
-                const goToUmpire = (fixtureId) => {
-                    activeFixtureId.value = fixtureId;
-                    currentMatchIndex.value = 0;
-                    changeTab('umpire');
-                };
-
-                // Check winner: 15 points, deuce require 2 points difference
-                const setWinner = computed(() => {
-                    if (!currentSet.value) return null;
-                    const s1 = currentSet.value.t1;
-                    const s2 = currentSet.value.t2;
-                    
-                    if ((s1 >= 15 || s2 >= 15) && Math.abs(s1 - s2) >= 2) {
-                        return s1 > s2 ? 't1' : 't2';
-                    }
-                    return null;
-                });
-
-                // Google Sheet Integration Function
-                const saveToGoogleSheet = async (fixtureData) => {
-                    const googleAppUrl = "https://script.google.com/macros/s/AKfycbxNbJ8_WFXjUotrruX5Vk7u9SraPqzzTyPOO0nv7vPY0XuJ_xfcnOFi-sXQaMhAJz3Sww/exec"; 
-                    
-                    try {
-                        if (googleAppUrl === "YOUR_GOOGLE_APP_SCRIPT_URL_HERE") {
-                            console.log("尚未設定 Google Sheet API URL，僅於本地測試環境執行。");
-                            return;
-                        }
-                        await fetch(googleAppUrl, {
-                            method: 'POST',
-                            body: JSON.stringify({
-                                action: 'updateFixture',
-                                fixture: fixtureData
-                            })
-                        });
-                        console.log("資料已成功同步儲存至 Google Sheet!");
-                    } catch (error) {
-                        console.error("同步至 Google Sheet 失敗", error);
-                    }
-                };
-
-                // Scoring Logic
-                const addPoint = (team) => {
-                    if (setWinner.value) return; 
-                    if (team === 't1') currentSet.value.t1++;
-                    if (team === 't2') currentSet.value.t2++;
-                };
-
-                const minusPoint = (team) => {
-                    if (setWinner.value) return; 
-                    if (team === 't1' && currentSet.value.t1 > 0) currentSet.value.t1--;
-                    if (team === 't2' && currentSet.value.t2 > 0) currentSet.value.t2--;
-                };
-
-                const confirmEndSet = () => {
-                    if (!setWinner.value) return;
-                    currentSet.value.winner = setWinner.value;
-                    
-                    if (setWinner.value === 't1') {
-                        currentActiveMatch.value.t1Score = currentSet.value.t1;
-                        currentActiveMatch.value.t2Score = currentSet.value.t2;
-                    } else {
-                        currentActiveMatch.value.t1Score = currentSet.value.t1;
-                        currentActiveMatch.value.t2Score = currentSet.value.t2;
-                    }
-                    
-                    currentActiveMatch.value.winner = setWinner.value;
-
-                    // Trigger Syncing to Google Sheets
-                    saveToGoogleSheet(activeFixture.value);
-                };
-
-                const nextMatch = () => {
-                    if (currentMatchIndex.value < 2) {
-                        currentMatchIndex.value++;
-                    }
-                };
-
-                const finishFixture = () => {
-                    if (activeFixture.value) {
-                        // Calculate final heads-up points
-                        let t1Wins = 0;
-                        let t2Wins = 0;
-                        activeFixture.value.matches.forEach(m => {
-                            if (m.winner === 't1') t1Wins++;
-                            if (m.winner === 't2') t2Wins++;
-                        });
-                        activeFixture.value.t1Score = t1Wins;
-                        activeFixture.value.t2Score = t2Wins;
-
-                        activeFixture.value.status = 'completed';
-                        activeFixtureId.value = null;
-                        changeTab('standings');
-                    }
-                };
-
-                // Return Interface for Vue Template Access
                 return {
                     currentTab,
-                    changeTab,
                     platformName,
                     isEditingName,
                     scheduleUnlocked,
                     umpireUnlocked,
                     passwordInput,
                     passwordError,
+                    changeTab,
                     checkPassword,
                     teams,
-                    fixtures,
+                    newTeamName,
+                    addNewTeam,
+                    removeTeam,
+                    saveTeamsToGoogleSheet,
                     newFixtureTeam1,
                     newFixtureTeam2,
                     createFixture,
-                    getTeamName,
-                    getMatchWording,
-                    standings,
-                    completedFixtures,
                     pendingFixtures,
-                    activeFixtureId,
+                    completedFixtures,
                     activeFixture,
+                    activeFixtureId,
                     currentMatchIndex,
                     currentActiveMatch,
                     currentSet,
-                    setWinner,
-                    goToUmpire,
                     addPoint,
                     minusPoint,
+                    setWinner,
                     confirmEndSet,
                     nextMatch,
-                    finishFixture
+                    finishFixture,
+                    goToUmpire,
+                    getTeamName,
+                    getMatchWording,
+                    standings
                 };
             }
         }).mount('#app');
