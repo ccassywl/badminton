@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>羽毛球聯賽管理平台</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue 3 CDN -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .bounce-enter-active {
+            animation: bounce-in 0.3s;
+        }
+        .bounce-leave-active {
+            animation: bounce-in 0.3s reverse;
+        }
+        @keyframes bounce-in {
+            0% { transform: scale(0.9); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen text-gray-800">
+
+    <div id="app" class="flex flex-col min-h-screen">
+
+        <!-- Top Navigation Bar -->
+        <header class="bg-green-700 text-white shadow-md">
+            <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+                <h1 class="text-xl md:text-2xl font-bold flex items-center gap-2">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg>
+                    <!-- Editable Platform Name -->
+                    <span v-if="!isEditingName" @click="isEditingName = true" class="cursor-pointer hover:text-green-200 transition flex items-center gap-2" title="點擊修改名稱">
+                        {{ platformName }}
+                        <svg class="w-4 h-4 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                    </span>
+                    <input v-else v-model="platformName" @blur="isEditingName = false" @keyup.enter="isEditingName = false" class="text-black px-2 py-1 rounded text-lg w-48 md:w-64 focus:outline-none focus:ring-2 focus:ring-green-400" autofocus />
+                </h1>
+                <div class="hidden md:flex gap-4">
+                    <button @click="changeTab('standings')" :class="{'bg-green-800 font-bold': currentTab === 'standings', 'hover:bg-green-600': currentTab !== 'standings'}" class="px-4 py-2 rounded transition">積分與結果</button>
+                    <button @click="changeTab('schedule')" :class="{'bg-green-800 font-bold': currentTab === 'schedule', 'hover:bg-green-600': currentTab !== 'schedule'}" class="px-4 py-2 rounded transition flex items-center gap-1">賽程管理 <span v-if="!scheduleUnlocked" class="text-xs">🔒</span></button>
+                    <button @click="changeTab('umpire')" :class="{'bg-green-800 font-bold': currentTab === 'umpire', 'hover:bg-green-600': currentTab !== 'umpire'}" class="px-4 py-2 rounded transition flex items-center gap-1">裁判計分 <span v-if="!umpireUnlocked" class="text-xs">🔒</span></button>
+                </div>
+            </div>
+            <!-- Mobile Navigation -->
+            <div class="md:hidden flex w-full bg-green-800">
+                <button @click="changeTab('standings')" :class="{'bg-green-900': currentTab === 'standings'}" class="flex-1 py-3 text-sm text-center transition">積分榜</button>
+                <button @click="changeTab('schedule')" :class="{'bg-green-900': currentTab === 'schedule'}" class="flex-1 py-3 text-sm text-center border-l border-green-700 transition flex justify-center items-center gap-1">賽程 <span v-if="!scheduleUnlocked" class="text-xs">🔒</span></button>
+                <button @click="changeTab('umpire')" :class="{'bg-green-900': currentTab === 'umpire'}" class="flex-1 py-3 text-sm text-center border-l border-green-700 transition flex justify-center items-center gap-1">裁判 <span v-if="!umpireUnlocked" class="text-xs">🔒</span></button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-1 container mx-auto px-4 py-6">
+            <transition name="fade" mode="out-in">
+                
+                <!-- View 1: Standings & Results -->
+                <div v-if="currentTab === 'standings'" key="standings" class="space-y-6">
+                    <!-- Leaderboard -->
+                    <section class="bg-white rounded-xl shadow-sm p-6 border-t-4 border-green-600">
+                        <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+                            🏆 隊伍積分榜 (Standings)
+                        </h2>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-100 border-b text-gray-600 text-sm">
+                                        <th class="p-3">排名</th>
+                                        <th class="p-3">隊伍名稱</th>
+                                        <th class="p-3 text-center">總勝場 (Matches Won)</th>
+                                        <th class="p-3 text-center">總對局 (Heads-Up)</th>
+                                        <th class="p-3 text-center">積分 (Points)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(team, index) in standings" :key="team.id" class="border-b hover:bg-gray-50 transition">
+                                        <td class="p-3 font-bold text-gray-500">
+                                            <span v-if="index === 0" class="text-yellow-500 text-lg">🥇 1</span>
+                                            <span v-else-if="index === 1" class="text-gray-400 text-lg">🥈 2</span>
+                                            <span v-else-if="index === 2" class="text-amber-600 text-lg">🥉 3</span>
+                                            <span v-else>{{ index + 1 }}</span>
+                                        </td>
+                                        <td class="p-3 font-semibold text-gray-900">{{ team.name }}</td>
+                                        <td class="p-3 text-center font-bold text-green-600">{{ team.wins }}</td>
+                                        <td class="p-3 text-center text-gray-500">{{ team.played }}</td>
+                                        <td class="p-3 text-center font-extrabold text-blue-600">{{ team.wins }} pts</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <!-- Completed Results -->
+                    <section class="bg-white rounded-xl shadow-sm p-6">
+                        <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+                            📋 最近比賽結果 (Recent Results)
+                        </h2>
+                        <div v-if="completedFixtures.length === 0" class="text-gray-400 text-center py-8">
+                            尚無已完成的對局賽事。
+                        </div>
+                        <div v-else class="space-y-4">
+                            <div v-for="fixture in completedFixtures" :key="fixture.id" class="border rounded-lg p-4 bg-gray-50">
+                                <div class="flex justify-between items-center mb-2 font-bold text-lg border-b pb-2">
+                                    <span :class="{'text-green-600': fixture.t1Score > fixture.t2Score}">{{ getTeamName(fixture.team1Id) }} ({{ fixture.t1Score }})</span>
+                                    <span class="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">已完賽</span>
+                                    <span :class="{'text-green-600': fixture.t2Score > fixture.t1Score}">({{ fixture.t2Score }}) {{ getTeamName(fixture.team2Id) }}</span>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-gray-600">
+                                    <div v-for="(match, idx) in fixture.matches" :key="idx" class="bg-white p-2 rounded shadow-sm flex justify-between">
+                                        <span>第{{ idx+1 }}場 ({{ match.type }}):</span>
+                                        <span class="font-bold" :class="match.winner === 't1' ? 'text-green-600' : 'text-blue-600'">
+                                            {{ match.t1Score }} - {{ match.t2Score }} 
+                                            ({{ getMatchWording(match, fixture) }})
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- View 2: Schedule Management -->
+                <div v-else-if="currentTab === 'schedule'" key="schedule" class="space-y-6">
+                    
+                    <!-- Password Lock Screen -->
+                    <div v-if="!scheduleUnlocked" class="bg-white rounded-xl shadow-sm p-8 text-center max-w-md mx-auto mt-10 border-t-4 border-green-500">
+                        <div class="flex justify-center mb-4 text-green-600">
+                            <svg class="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                        </div>
+                        <h2 class="text-2xl font-bold mb-2">管理員權限</h2>
+                        <p class="text-gray-500 mb-6">請輸入密碼以解鎖賽程管理功能。</p>
+                        <input type="password" v-model="passwordInput" @keyup.enter="checkPassword('schedule')" class="w-full border-2 focus:border-green-500 focus:ring-0 p-3 rounded-lg mb-2 text-center text-xl tracking-widest" placeholder="輸入密碼">
+                        <p v-if="passwordError" class="text-red-500 text-sm mb-4 font-bold">密碼錯誤，請重試！</p>
+                        <button @click="checkPassword('schedule')" class="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition mt-2 shadow-lg">解鎖</button>
+                    </div>
+
+                    <template v-else>
+                        <section class="bg-white rounded-xl shadow-sm p-6 border-t-4 border-green-500">
+                            <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+                                ➕ 新增對局賽程 (Create Fixture)
+                            </h2>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">主隊 (Team 1)</label>
+                                    <select v-model="newFixtureTeam1" class="w-full border rounded-md p-2 bg-gray-50">
+                                        <option v-for="team in teams" :key="team.id" :value="team.id" :disabled="team.id === newFixtureTeam2">
+                                            {{ team.name }}
+                                        </option>
+                                    </select>
+                                </div>
+                                <div class="text-center font-bold text-gray-400 hidden md:block pb-2">VS</div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">客隊 (Team 2)</label>
+                                    <select v-model="newFixtureTeam2" class="w-full border rounded-md p-2 bg-gray-50">
+                                        <option v-for="team in teams" :key="team.id" :value="team.id" :disabled="team.id === newFixtureTeam1">
+                                            {{ team.name }}
+                                        </option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button @click="createFixture" class="mt-4 bg-green-600 text-white px-6 py-2 rounded-md font-bold hover:bg-green-700 transition w-full md:w-auto">
+                                建立對局
+                            </button>
+                        </section>
+
+                        <!-- Fixtures List -->
+                        <section class="bg-white rounded-xl shadow-sm p-6">
+                            <h2 class="text-xl font-bold mb-4">進行中 / 待賽列表</h2>
+                            <div v-if="pendingFixtures.length === 0" class="text-gray-400 text-center py-4">
+                                目前沒有排定的待賽賽程。
+                            </div>
+                            <div class="space-y-3">
+                                <div v-for="fixture in pendingFixtures" :key="fixture.id" class="flex justify-between items-center border p-4 rounded-lg">
+                                    <div>
+                                        <span class="font-bold text-lg">{{ getTeamName(fixture.team1Id) }}</span>
+                                        <span class="text-gray-400 mx-2">VS</span>
+                                        <span class="font-bold text-lg">{{ getTeamName(fixture.team2Id) }}</span>
+                                    </div>
+                                    <button @click="goToUmpire(fixture.id)" class="text-sm bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 px-4 py-2 rounded transition font-semibold">
+                                        進入裁判計分 →
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
+                    </template>
+                </div>
+
+                <!-- View 3: Umpire Scoring -->
+                <div v-else-if="currentTab === 'umpire'" key="umpire" class="max-w-4xl mx-auto space-y-4">
+                    
+                    <!-- Password Lock Screen -->
+                    <div v-if="!umpireUnlocked" class="bg-white rounded-xl shadow-sm p-8 text-center max-w-md mx-auto mt-10 border-t-4 border-blue-500">
+                        <div class="flex justify-center mb-4 text-blue-600">
+                            <svg class="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                        </div>
+                        <h2 class="text-2xl font-bold mb-2">裁判權限</h2>
+                        <p class="text-gray-500 mb-6">請輸入密碼以解鎖裁判計分功能。</p>
+                        <input type="password" v-model="passwordInput" @keyup.enter="checkPassword('umpire')" class="w-full border-2 focus:border-blue-500 focus:ring-0 p-3 rounded-lg mb-2 text-center text-xl tracking-widest" placeholder="輸入密碼">
+                        <p v-if="passwordError" class="text-red-500 text-sm mb-4 font-bold">密碼錯誤，請重試！</p>
+                        <button @click="checkPassword('umpire')" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition mt-2 shadow-lg">解鎖</button>
+                    </div>
+
+                    <template v-else>
+                        <!-- Selection View (If no fixture selected) -->
+                        <div v-if="!activeFixture" class="bg-white rounded-xl shadow-sm p-6">
+                            <h2 class="text-xl font-bold mb-4 text-center">選擇要執法的賽程</h2>
+                            <div v-if="pendingFixtures.length === 0" class="text-gray-400 text-center py-8">
+                                尚未有進行中的賽程，請先至賽程管理建立賽事。
+                            </div>
+                            <div class="grid grid-cols-1 gap-3">
+                                <button v-for="fixture in pendingFixtures" :key="fixture.id" @click="activeFixtureId = fixture.id" class="p-4 border rounded-lg hover:bg-blue-50 text-left transition flex justify-between items-center">
+                                    <span class="font-bold">{{ getTeamName(fixture.team1Id) }} vs {{ getTeamName(fixture.team2Id) }}</span>
+                                    <span class="text-xs bg-blue-600 text-white px-2 py-1 rounded">開始計分</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Active Scoreboard View -->
+                        <div v-else class="bg-white rounded-xl shadow-md p-6 border-t-8 border-blue-600 space-y-6">
+                            
+                            <!-- Header Info -->
+                            <div class="flex justify-between items-center border-b pb-4">
+                                <button @click="activeFixtureId = null" class="text-sm text-gray-500 hover:text-black">← 返回列表</button>
+                                <span class="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full">
+                                    對局中 (Heads-Up Match)
+                                </span>
+                            </div>
+
+                            <!-- Match Navigation Tabs -->
+                            <div class="flex border-b">
+                                <button v-for="(match, index) in activeFixture.matches" :key="index" @click="currentMatchIndex = index"
+                                    :class="{'border-b-2 border-blue-600 text-blue-600 font-bold': currentMatchIndex === index, 'text-gray-400': currentMatchIndex !== index}"
+                                    class="flex-1 py-2 text-center transition">
+                                    第{{ index + 1 }}場: {{ match.type }}
+                                    <span v-if="match.winner" class="text-xs text-green-600">✓</span>
+                                </button>
+                            </div>
+
+                            <!-- Current Match Interface -->
+                            <div v-if="currentActiveMatch" class="space-y-6">
+                                <div class="text-center">
+                                    <span class="text-sm text-gray-500 uppercase tracking-widest font-semibold">賽制: 15分制 / 2分差勝出 (Deuce)</span>
+                                </div>
+
+                                <!-- Dynamic Big Scoreboard -->
+                                <div class="grid grid-cols-2 gap-4 text-center">
+                                    <!-- Team 1 -->
+                                    <div class="bg-red-50 p-6 rounded-xl border border-red-100 flex flex-col justify-between">
+                                        <div class="font-extrabold text-lg text-red-900 mb-2">{{ getTeamName(activeFixture.team1Id) }}</div>
+                                        <div class="text-6xl md:text-8xl font-black text-red-600 my-4">{{ currentSet.t1 }}</div>
+                                        <div class="flex justify-center gap-2">
+                                            <button @click="addPoint('t1')" :disabled="setWinner !== null" class="bg-red-600 text-white font-bold w-12 h-12 rounded-full text-2xl shadow hover:bg-red-700 disabled:opacity-50 transition">+</button>
+                                            <button @click="minusPoint('t1')" :disabled="setWinner !== null" class="bg-gray-200 text-gray-700 font-bold w-12 h-12 rounded-full text-xl shadow hover:bg-gray-300 disabled:opacity-50 transition">-</button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Team 2 -->
+                                    <div class="bg-blue-50 p-6 rounded-xl border border-blue-100 flex flex-col justify-between">
+                                        <div class="font-extrabold text-lg text-blue-900 mb-2">{{ getTeamName(activeFixture.team2Id) }}</div>
+                                        <div class="text-6xl md:text-8xl font-black text-blue-600 my-4">{{ currentSet.t2 }}</div>
+                                        <div class="flex justify-center gap-2">
+                                            <button @click="addPoint('t2')" :disabled="setWinner !== null" class="bg-blue-600 text-white font-bold w-12 h-12 rounded-full text-2xl shadow hover:bg-blue-700 disabled:opacity-50 transition">+</button>
+                                            <button @click="minusPoint('t2')" :disabled="setWinner !== null" class="bg-gray-200 text-gray-700 font-bold w-12 h-12 rounded-full text-xl shadow hover:bg-gray-300 disabled:opacity-50 transition">-</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Set End / Match Winner Banner -->
+                                <div v-if="setWinner" class="bg-yellow-50 border border-yellow-200 text-yellow-800 p-4 rounded-lg text-center font-bold text-lg animate-pulse">
+                                    🎉 本場獲勝隊伍: {{ setWinner === 't1' ? getTeamName(activeFixture.team1Id) : getTeamName(activeFixture.team2Id) }}！
+                                    <div class="mt-2">
+                                        <button @click="confirmEndSet" class="bg-green-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-green-700">確認並記錄結果</button>
+                                    </div>
+                                </div>
+
+                                <!-- Overall Heads-Up Navigation Controls -->
+                                <div class="flex justify-between items-center pt-4 border-t">
+                                    <button @click="nextMatch" v-if="currentMatchIndex < 2 && currentActiveMatch.winner" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 transition">
+                                        下一場比賽 →
+                                    </button>
+                                    <button @click="finishFixture" v-if="activeFixture.matches.every(m => m.winner)" class="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 transition ml-auto">
+                                        完成整個對局
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                
+            </transition>
+        </main>
+    </div>
+
+    <!-- Vue App Logic -->
+    <script>
+        const { createApp, ref, computed, reactive } = Vue;
+
+        createApp({
+            setup() {
+                // State
+                const currentTab = ref('standings');
+                const platformName = ref('羽毛球聯賽管理平台');
+                const isEditingName = ref(false);
+                
+                // Security
+                const scheduleUnlocked = ref(false);
+                const umpireUnlocked = ref(false);
+                const passwordInput = ref('');
+                const passwordError = ref(false);
+                const REQUIRED_PASSWORD = '19900830';
+
+                const changeTab = (tab) => {
+                    currentTab.value = tab;
+                    passwordInput.value = '';
+                    passwordError.value = false;
+                };
+
+                const checkPassword = (tab) => {
+                    if (passwordInput.value === REQUIRED_PASSWORD) {
+                        if (tab === 'schedule') scheduleUnlocked.value = true;
+                        if (tab === 'umpire') umpireUnlocked.value = true;
+                        passwordInput.value = '';
+                        passwordError.value = false;
+                    } else {
+                        passwordError.value = true;
+                    }
+                };
+                
+                // Initial 5 Teams
+                const teams = ref([
+                    { id: 1, name: '猛龍隊 (Dragons)' },
+                    { id: 2, name: '飛虎隊 (Tigers)' },
+                    { id: 3, name: '雄鷹隊 (Eagles)' },
+                    { id: 4, name: '獵豹隊 (Cheetahs)' },
+                    { id: 5, name: '巨狼隊 (Wolves)' }
+                ]);
+
+                // Fixture State Management
+                const fixtures = ref([
+                    {
+                        id: 101,
+                        team1Id: 1,
+                        team2Id: 2,
+                        status: 'completed',
+                        t1Score: 2,
+                        t2Score: 1,
+                        matches: [
+                            { type: '單打 (Single)', t1Score: 15, t2Score: 12, winner: 't1', sets: [{t1:15, t2:12}] },
+                            { type: '雙打 (Double)', t1Score: 13, t2Score: 15, winner: 't2', sets: [{t1:13, t2:15}] },
+                            { type: '單打 (Single)', t1Score: 16, t2Score: 14, winner: 't1', sets: [{t1:16, t2:14}] }
+                        ]
+                    }
+                ]);
+
+                // New Fixture Inputs
+                const newFixtureTeam1 = ref(1);
+                const newFixtureTeam2 = ref(2);
+
+                const createFixture = () => {
+                    if (newFixtureTeam1.value === newFixtureTeam2.value) return;
+                    
+                    fixtures.value.push({
+                        id: Date.now(),
+                        team1Id: newFixtureTeam1.value,
+                        team2Id: newFixtureTeam2.value,
+                        status: 'pending',
+                        t1Score: 0,
+                        t2Score: 0,
+                        matches: [
+                            { type: '單打 (Single)', t1Score: 0, t2Score: 0, winner: null, sets: [{t1:0, t2:0}] },
+                            { type: '雙打 (Double)', t1Score: 0, t2Score: 0, winner: null, sets: [{t1:0, t2:0}] },
+                            { type: '單打 (Single)', t1Score: 0, t2Score: 0, winner: null, sets: [{t1:0, t2:0}] }
+                        ]
+                    });
+                    
+                    alert('對局建立成功！');
+                };
+
+                // Helper Functions
+                const getTeamName = (id) => {
+                    const t = teams.value.find(team => team.id === id);
+                    return t ? t.name : '未知隊伍';
+                };
+
+                const getMatchWording = (match, fixture) => {
+                    return match.winner === 't1' ? getTeamName(fixture.team1Id) + ' 勝' : getTeamName(fixture.team2Id) + ' 勝';
+                };
+
+                // Standings Computation
+                const standings = computed(() => {
+                    const stats = teams.value.map(team => ({
+                        id: team.id,
+                        name: team.name,
+                        wins: 0,
+                        played: 0
+                    }));
+
+                    fixtures.value.forEach(f => {
+                        if (f.status === 'completed') {
+                            const t1 = stats.find(s => s.id === f.team1Id);
+                            const t2 = stats.find(s => s.id === f.team2Id);
+
+                            if (t1 && t2) {
+                                t1.played++;
+                                t2.played++;
+                                f.matches.forEach(m => {
+                                    if (m.winner === 't1') t1.wins++;
+                                    if (m.winner === 't2') t2.wins++;
+                                });
+                            }
+                        }
+                    });
+
+                    return stats.sort((a, b) => b.wins - a.wins);
+                });
+
+                const completedFixtures = computed(() => fixtures.value.filter(f => f.status === 'completed'));
+                const pendingFixtures = computed(() => fixtures.value.filter(f => f.status === 'pending'));
+
+                // Active Umpire State
+                const activeFixtureId = ref(null);
+                const currentMatchIndex = ref(0);
+
+                const activeFixture = computed(() => fixtures.value.find(f => f.id === activeFixtureId.value));
+                
+                const currentActiveMatch = computed(() => {
+                    if (!activeFixture.value) return null;
+                    return activeFixture.value.matches[currentMatchIndex.value];
+                });
+
+                const currentSet = computed(() => {
+                    if (!currentActiveMatch.value) return null;
+                    return currentActiveMatch.value.sets[0];
+                });
+
+                const goToUmpire = (fixtureId) => {
+                    activeFixtureId.value = fixtureId;
+                    currentMatchIndex.value = 0;
+                    changeTab('umpire');
+                };
+
+                // Check winner: 15 points, deuce require 2 points difference
+                const setWinner = computed(() => {
+                    if (!currentSet.value) return null;
+                    const s1 = currentSet.value.t1;
+                    const s2 = currentSet.value.t2;
+                    
+                    if ((s1 >= 15 || s2 >= 15) && Math.abs(s1 - s2) >= 2) {
+                        return s1 > s2 ? 't1' : 't2';
+                    }
+                    return null;
+                });
+
+                // Google Sheet Integration Function
+                const saveToGoogleSheet = async (fixtureData) => {
+                    const googleAppUrl = "YOUR_GOOGLE_APP_SCRIPT_URL_HERE"; 
+                    
+                    try {
+                        if (googleAppUrl === "YOUR_GOOGLE_APP_SCRIPT_URL_HERE") {
+                            console.log("尚未設定 Google Sheet API URL，僅於本地測試環境執行。");
+                            return;
+                        }
+                        await fetch(googleAppUrl, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                action: 'updateFixture',
+                                fixture: fixtureData
+                            })
+                        });
+                        console.log("資料已成功同步儲存至 Google Sheet!");
+                    } catch (error) {
+                        console.error("同步至 Google Sheet 失敗", error);
+                    }
+                };
+
+                // Scoring Logic
+                const addPoint = (team) => {
+                    if (setWinner.value) return; 
+                    if (team === 't1') currentSet.value.t1++;
+                    if (team === 't2') currentSet.value.t2++;
+                };
+
+                const minusPoint = (team) => {
+                    if (setWinner.value) return; 
+                    if (team === 't1' && currentSet.value.t1 > 0) currentSet.value.t1--;
+                    if (team === 't2' && currentSet.value.t2 > 0) currentSet.value.t2--;
+                };
+
+                const confirmEndSet = () => {
+                    if (!setWinner.value) return;
+                    currentSet.value.winner = setWinner.value;
+                    
+                    if (setWinner.value === 't1') {
+                        currentActiveMatch.value.t1Score = currentSet.value.t1;
+                        currentActiveMatch.value.t2Score = currentSet.value.t2;
+                    } else {
+                        currentActiveMatch.value.t1Score = currentSet.value.t1;
+                        currentActiveMatch.value.t2Score = currentSet.value.t2;
+                    }
+                    
+                    currentActiveMatch.value.winner = setWinner.value;
+
+                    // Trigger Syncing to Google Sheets
+                    saveToGoogleSheet(activeFixture.value);
+                };
+
+                const nextMatch = () => {
+                    if (currentMatchIndex.value < 2) {
+                        currentMatchIndex.value++;
+                    }
+                };
+
+                const finishFixture = () => {
+                    if (activeFixture.value) {
+                        // Calculate final heads-up points
+                        let t1Wins = 0;
+                        let t2Wins = 0;
+                        activeFixture.value.matches.forEach(m => {
+                            if (m.winner === 't1') t1Wins++;
+                            if (m.winner === 't2') t2Wins++;
+                        });
+                        activeFixture.value.t1Score = t1Wins;
+                        activeFixture.value.t2Score = t2Wins;
+
+                        activeFixture.value.status = 'completed';
+                        activeFixtureId.value = null;
+                        changeTab('standings');
+                    }
+                };
+
+                // Return Interface for Vue Template Access
+                return {
+                    currentTab,
+                    changeTab,
+                    platformName,
+                    isEditingName,
+                    scheduleUnlocked,
+                    umpireUnlocked,
+                    passwordInput,
+                    passwordError,
+                    checkPassword,
+                    teams,
+                    fixtures,
+                    newFixtureTeam1,
+                    newFixtureTeam2,
+                    createFixture,
+                    getTeamName,
+                    getMatchWording,
+                    standings,
+                    completedFixtures,
+                    pendingFixtures,
+                    activeFixtureId,
+                    activeFixture,
+                    currentMatchIndex,
+                    currentActiveMatch,
+                    currentSet,
+                    setWinner,
+                    goToUmpire,
+                    addPoint,
+                    minusPoint,
+                    confirmEndSet,
+                    nextMatch,
+                    finishFixture
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
